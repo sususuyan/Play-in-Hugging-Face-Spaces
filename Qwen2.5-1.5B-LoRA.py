@@ -82,6 +82,8 @@ training_args = SFTConfig(
     max_length=512,  # 可增大，但依赖模型
     report_to="tensorboard",   # 可选 "wandb"、"tensorboard" 或 "none"
     completion_only_loss=True, # 只计算 completion 部分的 loss，默认为True
+    push_to_hub=True,
+    hub_model_id="rookiezyp/Qwen2.5-1.5B-alpaca-20260226",
 )
 
 # 创建 SFT trainer
@@ -93,4 +95,4 @@ trainer = SFTTrainer(
 
 trainer.train()
 
-trainer.save_model("./qwen2.5-1.5b-alpaca-20260226")
+trainer.push_to_hub() # 上传到 Hugging Face
