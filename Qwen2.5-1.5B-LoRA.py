@@ -58,7 +58,6 @@ def format_prompt_completion(example):
     return {"prompt": prompt, "completion": completion}
 # 应用格式化，并删除原始字段
 formatted_dataset = dataset.map(format_prompt_completion, remove_columns=["instruction", "input", "output", "text"])
-print(formatted_dataset[0])
 
 # 配置SFTTrainer
 from trl import SFTTrainer, SFTConfig
