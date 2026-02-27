@@ -149,7 +149,7 @@ def Qwen2_5_LoRA_inference():
         """构造 Alpaca 格式的提示文本（只包含 Instruction，不包含 Response）。"""
         template = (
             "Below is an instruction that describes a task. "
-            "Write a response that appropriately completes the request.\n\n"
+            "Write a structured, and well-organized response that appropriately completes the request.\n\n"
             "### Instruction:\n"
             f"{instruction}\n\n"
             "### Response:\n"
@@ -184,4 +184,4 @@ def Qwen2_5_LoRA_inference():
     print("=" * 60)
 
 if __name__ == "__main__":
-    Qwen2_5_inference()
+    Qwen2_5_LoRA_inference()
