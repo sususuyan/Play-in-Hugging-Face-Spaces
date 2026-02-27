@@ -94,4 +94,6 @@ trainer = SFTTrainer(
 
 trainer.train()
 
+trainer.save_model("./qwen2.5-1.5b-alpaca-20260226")
+
 trainer.push_to_hub() # 上传到 Hugging Face
