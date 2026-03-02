@@ -20,7 +20,7 @@ base_model = AutoModelForCausalLM.from_pretrained(
 )
 model = PeftModel.from_pretrained(base_model, lora_name)
 
-def Qwen2_5_inference(inputs: dict):
+def Qwen2_5_LoRA_inference(inputs: dict):
     model_inputs = tokenizer([inputs["question"]], return_tensors="pt").to(model.device)
 
     generated_ids = model.generate(
