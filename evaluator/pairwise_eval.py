@@ -3,8 +3,8 @@ from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 import os
 
-client = Client()
 load_dotenv()
+client = Client()
 
 # See the prompt: https://smith.langchain.com/hub/langchain-ai/pairwise-evaluation-2
 prompt = client.pull_prompt("langchain-ai/pairwise-evaluation-2")
@@ -52,8 +52,9 @@ def ranked_preference(inputs: dict, outputs: list[dict], refernce_outputs: dict)
         scores = [0, 0]
     return scores
 
+# 3.执行成对评估
 evaluate(
-    ("experiment-1", "experiment-2"),  # Replace with the names/IDs of your experiments
+    (exp_base, exp_lora),  
     evaluators=[ranked_preference],
     randomize_order=True,
     max_concurrency=4,
