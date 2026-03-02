@@ -34,7 +34,7 @@ model = ChatOpenAI(model="Qwen/Qwen3-235B-A22B-Instruct-2507", temperature=0, ap
 chain = prompt | model
 
 # 评估器
-def ranked_preference(inputs: dict, outputs: list[dict], refernce_outputs: dict) -> list:
+def ranked_preference(inputs: dict, outputs: list[dict], reference_outputs: dict) -> list:
     # Assumes example inputs have a 'question' key and experiment
     # outputs have an 'answer' key.
     # reference_outputs have a 'response' key.
