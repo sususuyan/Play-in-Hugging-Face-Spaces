@@ -3,6 +3,7 @@ from peft import get_peft_model, LoraConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from trl import GRPOTrainer, GRPOConfig
+import re
 
 # 加载与预处理数据集 GSM8K
 reasoning_start = "<THINK>"
@@ -35,11 +36,7 @@ def get_gsm8k_questions():
     }) 
     return data 
 
-dataset = get_gsm8k_questions()
-
 # 奖励函数
-import re
-
 def extract_xml_answer(text: str) -> str:
     answer = text.split("<SOLUTION>")[-1]
     answer = answer.split("</SOLUTION>")[0]
@@ -107,6 +104,9 @@ if __name__ == "__main__":
         attn_implementation="sdpa", # "flash_attention_2 不支持T4"
         trust_remote_code=True,
     )
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
 
     # 配置LoRA
     config = LoraConfig(
@@ -120,34 +120,51 @@ if __name__ == "__main__":
     model = get_peft_model(model, config)
 
     # GRPO 配置
+    '''
+    from vllm import SamplingParams
+    vllm_sampling_params = SamplingParams(
+        min_p = 0.1,
+        top_p = 1.0,
+        top_k = -1,
+        seed = 3407,
+        stop = [tokenizer.eos_token],
+        include_stop_str_in_output = True,
+    )
+    '''
     training_args = GRPOConfig(
-        output_dir=OUTPUT_DIR,
-        num_train_epochs=1,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=8,
-        learning_rate=1e-5,
-        bf16=True,
-        remove_unused_columns=False,  # 保留 answer 供奖励函数使用
-        max_completion_length=512,
-        num_generations=4,
-        logging_steps=10,
-        save_strategy="epoch",
-        report_to="tensorboard",
-        optim="adamw_torch",
-        warmup_ratio=0.05,
-        max_grad_norm=0.3,
+        # vllm_sampling_params = vllm_sampling_params,
+        temperature = 1.0, # 控制采样随机性：1.0为标准，>1.0为更随机，<1.0为更确定
+        learning_rate = 5e-6,
+        weight_decay = 0.001,
+        warmup_ratio = 0.1,
+        lr_scheduler_type = "linear",
+        optim = "adamw_torch",
+        logging_steps = 10,
+        per_device_train_batch_size = 1,
+        gradient_accumulation_steps = 4, # 可增至 4 更稳
+        num_generations = 4, # 每个prompt生成的样本数量，用于计算 reward 和策略梯度
+        max_completion_length = 512,
+        num_train_epochs = 1, # 完整训练可设为 1
+        report_to = "tensorboard", # 也可传 "wandb"
+        output_dir = "./Qwen2.5-1.5B-Instruct-GSM8K-GRPO",
+        push_to_hub = True,
+        hub_model_id = "rookiezyp/Qwen2.5-1.5B-Instruct-GSM8K-GRPO-20260303",
     )
 
-    # ========= 5. 创建 GRPO Trainer 并训练 =========
     trainer = GRPOTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=dataset,
-        reward_funcs=gsm8k_accuracy_reward,
-        processing_class=tokenizer,
+        model = model,
+        processing_class = tokenizer,
+        reward_funcs=[
+            xml_count_reward_func,
+            soft_format_reward_func,
+            strict_format_reward_func,
+            int_reward_func,
+            correctness_reward_func
+        ],
+        args = training_args,
+        train_dataset = dataset,
     )
 
-    print("开始 GRPO 训练...")
     trainer.train()
-    trainer.save_model(OUTPUT_DIR)
-    print(f"模型已保存至 {OUTPUT_DIR}")
+    trainer.save_model("./Qwen2.5-1.5B-Instruct-GSM8K-GRPO-20260303")
+    trainer.push_to_hub() # 上传到 Hugging Face
