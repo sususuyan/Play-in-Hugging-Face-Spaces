@@ -101,12 +101,12 @@ if __name__ == "__main__":
         model_name,
         device_map="auto",
         dtype=torch.bfloat16,
-        attn_implementation="sdpa", # "flash_attention_2 不支持T4"
+        attn_implementation="flash_attention_2", # "flash_attention_2 支持L4"
         trust_remote_code=True,
     )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
+    tokenizer.padding_side = "left" 
 
     # 配置LoRA
     config = LoraConfig(
@@ -140,7 +140,7 @@ if __name__ == "__main__":
         lr_scheduler_type = "linear",
         optim = "adamw_torch",
         logging_steps = 10,
-        per_device_train_batch_size = 1,
+        per_device_train_batch_size = 4,
         gradient_accumulation_steps = 4, # 可增至 4 更稳
         num_generations = 4, # 每个prompt生成的样本数量，用于计算 reward 和策略梯度
         max_completion_length = 512,
