@@ -1,0 +1,153 @@
+from datasets import load_dataset, Dataset
+from peft import get_peft_model, LoraConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+from trl import GRPOTrainer, GRPOConfig
+
+# 加载与预处理数据集 GSM8K
+reasoning_start = "<THINK>"
+reasoning_end   = "</THINK>"
+solution_start  = "<SOLUTION>"
+solution_end    = "</SOLUTION>"
+
+SYSTEM_PROMPT = \
+f"""You are given a math problem.
+Think about the problem and provide your thinking process.
+Place it between {reasoning_start} and {reasoning_end}.
+Then provide the final answer as a single number.
+Do NOT include any words, units, symbols, or explanations.
+Place ONLY the number between {solution_start} and {solution_end}.
+"""
+
+def extract_hash_answer(text: str) -> str | None:
+    if "####" not in text:
+        return None
+    return text.split("####")[1].strip()
+
+def get_gsm8k_questions():
+    data = load_dataset('openai/gsm8k', 'main')["train"] 
+    data = data.map(lambda x: { 
+        'prompt': [
+            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'user', 'content': x['question']}
+        ],
+        'answer': extract_hash_answer(x['answer'])
+    }) 
+    return data 
+
+dataset = get_gsm8k_questions()
+
+# 奖励函数
+import re
+
+def extract_xml_answer(text: str) -> str:
+    answer = text.split("<SOLUTION>")[-1]
+    answer = answer.split("</SOLUTION>")[0]
+    return answer.strip()
+
+# 奖励函数
+# 答案正确性奖励：与标准答案相等奖励2分，否则0分
+def correctness_reward_func(prompts, completions, answer, **kwargs) -> list[float]:
+    responses = [completion[0]['content'] for completion in completions]
+    q = prompts[0][-1]['content']
+    extracted_responses = [extract_xml_answer(r) for r in responses]
+    return [2.0 if r == a else 0.0 for r, a in zip(extracted_responses, answer)]
+
+# 答案格式奖励：答案是数字奖励0.5分，否则0分
+def int_reward_func(completions, **kwargs) -> list[float]:
+    responses = [completion[0]['content'] for completion in completions]
+    extracted_responses = [extract_xml_answer(r) for r in responses]
+    return [0.5 if r.isdigit() else 0.0 for r in extracted_responses]
+
+# 严格检查特定格式，要求格式完整，顺序正确，不能有额外内容，从头到尾匹配
+def strict_format_reward_func(completions, **kwargs) -> list[float]:
+    """严格检查特定格式"""
+    pattern = r"^<THINK>\n.*?\n</THINK>\n<SOLUTION>\n.*?\n</SOLUTION>\n$"
+    responses = [completion[0]["content"] for completion in completions]
+    matches = [re.match(pattern, r) for r in responses]
+    return [0.5 if match else 0.0 for match in matches]
+
+# 宽松检查特定格式，允许额外内容，不要求顺序正确，不要求从头到尾匹配
+def soft_format_reward_func(completions, **kwargs) -> list[float]:
+    """宽松检查特定格式"""
+    pattern = r"<THINK>.*?</THINK>\s*<SOLUTION>.*?</SOLUTION>"
+    responses = [completion[0]["content"] for completion in completions]
+    matches = [re.match(pattern, r) for r in responses]
+    return [0.5 if match else 0.0 for match in matches]
+
+# 计算XML格式得分：<THINK>和<SOLUTION>的个数和位置
+def count_xml(text) -> float:
+    count = 0.0
+    if text.count("<THINK>\n") == 1:
+        count += 0.125
+    if text.count("\n</THINK>\n") == 1:
+        count += 0.125
+    if text.count("\n<SOLUTION>\n") == 1:
+        count += 0.125
+        count -= len(text.split("\n</SOLUTION>\n")[-1])*0.001
+    if text.count("\n</SOLUTION>") == 1:
+        count += 0.125
+        count -= (len(text.split("\n</SOLUTION>")[-1]) - 1)*0.001
+    return count
+
+# 计算XML格式得分：<THINK>和<SOLUTION>的个数和位置
+def xml_count_reward_func(completions, **kwargs) -> list[float]:
+    contents = [completion[0]["content"] for completion in completions]
+    return [count_xml(c) for c in contents]
+
+if __name__ == "__main__":
+    dataset = get_gsm8k_questions()
+
+    # 加载模型
+    model_name = "Qwen/Qwen2.5-1.5B-Instruct"
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        device_map="auto",
+        dtype=torch.bfloat16,
+        attn_implementation="sdpa", # "flash_attention_2 不支持T4"
+        trust_remote_code=True,
+    )
+
+    # 配置LoRA
+    config = LoraConfig(
+        r=8, # LoRA rank
+        lora_alpha=16, # 缩放系数，通常为 2*r
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        lora_dropout=0.05,
+        bias="none",
+        task_type="CAUSAL_LM",
+    )
+    model = get_peft_model(model, config)
+
+    # GRPO 配置
+    training_args = GRPOConfig(
+        output_dir=OUTPUT_DIR,
+        num_train_epochs=1,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=8,
+        learning_rate=1e-5,
+        bf16=True,
+        remove_unused_columns=False,  # 保留 answer 供奖励函数使用
+        max_completion_length=512,
+        num_generations=4,
+        logging_steps=10,
+        save_strategy="epoch",
+        report_to="tensorboard",
+        optim="adamw_torch",
+        warmup_ratio=0.05,
+        max_grad_norm=0.3,
+    )
+
+    # ========= 5. 创建 GRPO Trainer 并训练 =========
+    trainer = GRPOTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=dataset,
+        reward_funcs=gsm8k_accuracy_reward,
+        processing_class=tokenizer,
+    )
+
+    print("开始 GRPO 训练...")
+    trainer.train()
+    trainer.save_model(OUTPUT_DIR)
+    print(f"模型已保存至 {OUTPUT_DIR}")
