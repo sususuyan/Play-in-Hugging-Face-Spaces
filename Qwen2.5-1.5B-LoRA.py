@@ -12,7 +12,7 @@ model = AutoModelForCausalLM.from_pretrained(
     model_name,
     device_map="auto",
     dtype=torch.bfloat16,
-    attn_implementation="sdpa", # "flash_attention_2 不支持T4"
+    attn_implementation="flash_attention_2", # "flash_attention_2 不支持T4"
     trust_remote_code=True,
 )
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -24,7 +24,8 @@ from peft import get_peft_model, LoraConfig
 config = LoraConfig(
     r=8, # LoRA rank
     lora_alpha=16, # 缩放系数，通常为 2*r
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    # target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], # Attention+MLP
     lora_dropout=0.05,
     bias="none",
     task_type="CAUSAL_LM",
@@ -64,7 +65,7 @@ from trl import SFTTrainer, SFTConfig
 
 # SFT 配置
 training_args = SFTConfig(
-    output_dir="./qwen2.5-1.5b-alpaca",
+    output_dir="./qwen2.5-1.5b-alpaca-all",
     num_train_epochs=1,    # 指定训练轮数
     per_device_train_batch_size=4, # 每个设备上的 batch_size
     gradient_accumulation_steps=4, # 梯度累积步数
@@ -82,7 +83,7 @@ training_args = SFTConfig(
     report_to="tensorboard",   # 可选 "wandb"、"tensorboard" 或 "none"
     completion_only_loss=True, # 只计算 completion 部分的 loss，默认为True
     push_to_hub=True,
-    hub_model_id="rookiezyp/Qwen2.5-1.5B-alpaca-20260226",
+    hub_model_id="rookiezyp/Qwen2.5-1.5B-alpaca-all-20260311",
 )
 
 # 创建 SFT trainer
@@ -94,6 +95,6 @@ trainer = SFTTrainer(
 
 trainer.train()
 
-trainer.save_model("./qwen2.5-1.5b-alpaca-20260226")
+trainer.save_model("./qwen2.5-1.5b-alpaca-all-20260311")
 
 trainer.push_to_hub() # 上传到 Hugging Face
