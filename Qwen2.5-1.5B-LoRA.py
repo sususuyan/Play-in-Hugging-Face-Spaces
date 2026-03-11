@@ -1,7 +1,8 @@
 # 准备数据集
 from datasets import load_dataset
 
-dataset = load_dataset("tatsu-lab/alpaca", split="train")
+# dataset = load_dataset("tatsu-lab/alpaca", split="train") # 适用于 alpaca 数据集
+dataset = load_dataset("yahma/alpaca-cleaned", split="train") # 适用于 alpaca-cleaned 数据集
 
 # 加载模型
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -24,8 +25,8 @@ from peft import get_peft_model, LoraConfig
 config = LoraConfig(
     r=8, # LoRA rank
     lora_alpha=16, # 缩放系数，通常为 2*r
-    # target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], # Attention+MLP
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    # target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], # Attention+MLP
     lora_dropout=0.05,
     bias="none",
     task_type="CAUSAL_LM",
@@ -58,14 +59,15 @@ def format_prompt_completion(example):
 
     return {"prompt": prompt, "completion": completion}
 # 应用格式化，并删除原始字段
-formatted_dataset = dataset.map(format_prompt_completion, remove_columns=["instruction", "input", "output", "text"])
+# formatted_dataset = dataset.map(format_prompt_completion, remove_columns=["instruction", "input", "output", "text"]) # 适用于 alpaca 数据集
+formatted_dataset = dataset.map(format_prompt_completion, remove_columns=["instruction", "input", "output"]) # 适用于alpaca-cleaned数据集
 
 # 配置SFTTrainer
 from trl import SFTTrainer, SFTConfig
 
 # SFT 配置
 training_args = SFTConfig(
-    output_dir="./qwen2.5-1.5b-alpaca-all",
+    output_dir="./qwen2.5-1.5b-alpaca-cleaned",
     num_train_epochs=1,    # 指定训练轮数
     per_device_train_batch_size=4, # 每个设备上的 batch_size
     gradient_accumulation_steps=4, # 梯度累积步数
@@ -83,7 +85,7 @@ training_args = SFTConfig(
     report_to="tensorboard",   # 可选 "wandb"、"tensorboard" 或 "none"
     completion_only_loss=True, # 只计算 completion 部分的 loss，默认为True
     push_to_hub=True,
-    hub_model_id="rookiezyp/Qwen2.5-1.5B-alpaca-all-20260311",
+    hub_model_id="rookiezyp/Qwen2.5-1.5B-alpaca-cleaned-20260311",
 )
 
 # 创建 SFT trainer
@@ -95,6 +97,6 @@ trainer = SFTTrainer(
 
 trainer.train()
 
-trainer.save_model("./qwen2.5-1.5b-alpaca-all-20260311")
+trainer.save_model("./qwen2.5-1.5b-alpaca-cleaned-20260311")
 
 trainer.push_to_hub() # 上传到 Hugging Face
