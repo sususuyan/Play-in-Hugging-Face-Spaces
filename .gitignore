@@ -1,5 +1,6 @@
 qwen2.5-1.5b-alpaca*
 Qwen2.5-1.5B-Instruct-GSM8K*
+qwen3-8b-base*
 
 # 环境变量（含敏感信息，勿提交）
 .env
