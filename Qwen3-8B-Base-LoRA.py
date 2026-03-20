@@ -6,20 +6,39 @@ from datasets import load_dataset
 dataset = load_dataset("rookiezyp/term", split="train") # 建筑施工术语
 
 # 加载模型
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from peft import prepare_model_for_kbit_training
 import torch
 
 model_name = "Qwen/Qwen3-8B-Base"
+# 量化配置
+# base权重在显存中以4bit格式存储，在参与计算时（forward+backward）时反量化为bf16再计算
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16,
+    bnb_4bit_use_double_quant=True,
+)
+# 量化加载
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     device_map="auto",
-    dtype=torch.bfloat16,
+    quantization_config=bnb_config,
     attn_implementation="flash_attention_2", # "flash_attention_2 不支持T4"
     trust_remote_code=True,
 )
+# model = AutoModelForCausalLM.from_pretrained(
+#     model_name,
+#     device_map="auto",
+#     dtype=torch.bfloat16,
+#     attn_implementation="flash_attention_2", # "flash_attention_2 不支持T4"
+#     trust_remote_code=True,
+# )
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"
+# 训练前准备
+model = prepare_model_for_kbit_training(model)
 
 # 配置LoRA
 from peft import get_peft_model, LoraConfig
@@ -28,7 +47,7 @@ config = LoraConfig(
     lora_alpha=16, # 缩放系数，通常为 2*r
     # target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], # Attention+MLP
-    use_dora=True,
+    # use_dora=True,
     lora_dropout=0.05,
     bias="none",
     task_type="CAUSAL_LM",
@@ -69,7 +88,7 @@ from trl import SFTTrainer, SFTConfig
 
 # SFT 配置
 training_args = SFTConfig(
-    output_dir="./qwen3-8b-base-dora-term",
+    output_dir="./qwen3-8b-base-term-q4",
     num_train_epochs=1,    # 指定训练轮数
     per_device_train_batch_size=4, # 每个设备上的 batch_size
     gradient_accumulation_steps=4, # 梯度累积步数
@@ -79,7 +98,8 @@ training_args = SFTConfig(
     bf16=True,  # 用 bfloat16 提升稳定性      
     logging_steps=10,
     save_strategy="epoch",
-    optim="adamw_torch",  # 适配 QLoRA 的优化器      
+    # optim="adamw_torch",
+    optim="paged_adamw_8bit", # 适配 QLoRA 的优化器     
     lr_scheduler_type="cosine",
     warmup_ratio=0.05,
     max_grad_norm=0.3,
@@ -87,7 +107,7 @@ training_args = SFTConfig(
     report_to="tensorboard",   # 可选 "wandb"、"tensorboard" 或 "none"
     completion_only_loss=True, # 只计算 completion 部分的 loss，默认为True
     push_to_hub=True,
-    hub_model_id="rookiezyp/Qwen3-8B-Base-dora-term-20260313",
+    hub_model_id="rookiezyp/Qwen3-8B-Base-term-q4-20260320",
 )
 
 # 创建 SFT trainer
@@ -99,6 +119,6 @@ trainer = SFTTrainer(
 
 trainer.train()
 
-trainer.save_model("./qwen3-8b-base-dora-term-20260313")
+trainer.save_model("./qwen3-8b-base-term-q4-20260320")
 
 trainer.push_to_hub() # 上传到 Hugging Face

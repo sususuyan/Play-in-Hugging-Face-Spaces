@@ -10,7 +10,7 @@ load_dotenv()
 
 # 待评估函数
 model_name = "Qwen/Qwen2.5-1.5B"
-lora_name = "rookiezyp/Qwen2.5-1.5B-alpaca-20260226"
+lora_name = "rookiezyp/Qwen2.5-1.5B-alpaca-cleaned-q4-20260320"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 base_model = AutoModelForCausalLM.from_pretrained(
     model_name,
@@ -82,11 +82,11 @@ def main():
     client = Client()
     experiment_results = client.evaluate(
         Qwen2_5_LoRA_inference,
-        data="alpaca-100",
+        data="alpaca-cleaned-100",
         evaluators=[
             correctness_evaluator,
         ],
-        experiment_prefix="Qwen2.5-1.5B-LoRA-correctness-eval"
+        experiment_prefix="Qwen2.5-1.5B-LoRA-all-q4-correctness-eval"
     )
 
 if __name__ == "__main__":

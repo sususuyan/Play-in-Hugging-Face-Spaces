@@ -10,7 +10,7 @@ load_dotenv()
 
 # 待评估函数
 model_name = "Qwen/Qwen3-8B-Base"
-lora_name = "rookiezyp/Qwen3-8B-Base-dora-term-20260313"
+lora_name = "rookiezyp/Qwen3-8B-Base-term-q4-20260320"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 base_model = AutoModelForCausalLM.from_pretrained(
     model_name,
@@ -86,7 +86,7 @@ def main():
         evaluators=[
             correctness_evaluator,
         ],
-        experiment_prefix="Qwen3-8B-DoRA-correctness-eval"
+        experiment_prefix="Qwen3-8B-q4-correctness-eval"
     )
 
 if __name__ == "__main__":
